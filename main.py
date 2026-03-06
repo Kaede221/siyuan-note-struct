@@ -11,26 +11,29 @@ API_TOKEN = ""
 
 def select_notebooks_interactive(notebooks: list) -> list:
     """交互式选择要导出的笔记本。"""
-    if not notebooks:
-        print("没有找到任何笔记本")
+    # 过滤掉已关闭的笔记本
+    available_notebooks = [nb for nb in notebooks if not nb.get('closed', False)]
+    
+    if not available_notebooks:
+        print("没有找到任何可用的笔记本（所有笔记本都已关闭）")
         return []
-    
+
     print("\n📚 可用的笔记本：\n")
-    for i, notebook in enumerate(notebooks, 1):
+    for i, notebook in enumerate(available_notebooks, 1):
         print(f"  {i}. {notebook['name']}")
-    
+
     print(f"\n请选择要导出的笔记本 (默认全选，按 Enter 确认):")
     print("输入格式: 1,2,3 或 1-3 或直接按 Enter 选择全部")
     print("例如: 1,3 表示选择第1和第3个笔记本\n")
-    
+
     user_input = input("请输入: ").strip()
-    
+
     # 默认全选
     if not user_input:
-        return notebooks
-    
+        return available_notebooks
+
     selected_indices = set()
-    
+
     try:
         # 处理逗号分隔的输入
         parts = user_input.split(",")
@@ -43,21 +46,23 @@ def select_notebooks_interactive(notebooks: list) -> list:
                 selected_indices.update(range(start, end + 1))
             else:
                 selected_indices.add(int(part))
-        
+
         # 验证索引范围
-        selected_indices = {i for i in selected_indices if 1 <= i <= len(notebooks)}
-        
+        selected_indices = {i for i in selected_indices if 1 <= i <= len(available_notebooks)}
+
         if not selected_indices:
             print("❌ 输入无效，已选择全部笔记本")
-            return notebooks
-        
-        selected = [notebooks[i - 1] for i in sorted(selected_indices)]
-        print(f"\n✓ 已选择 {len(selected)} 个笔记本: {', '.join(nb['name'] for nb in selected)}\n")
+            return available_notebooks
+
+        selected = [available_notebooks[i - 1] for i in sorted(selected_indices)]
+        print(
+            f"\n✓ 已选择 {len(selected)} 个笔记本: {', '.join(nb['name'] for nb in selected)}\n"
+        )
         return selected
-        
+
     except (ValueError, IndexError):
         print("❌ 输入格式错误，已选择全部笔记本\n")
-        return notebooks
+        return available_notebooks
 
 
 def set_api_token(token: str):
@@ -89,32 +94,31 @@ def get_notebooks() -> list:
 
 def get_doc_tree(notebook_id: str, path: str = "/", depth: int = 0) -> list:
     """递归获取笔记本的所有文档树。"""
-    result = make_request("/api/filetree/listDocsByPath", {
-        "notebook": notebook_id,
-        "path": path
-    })
-    
+    result = make_request(
+        "/api/filetree/listDocsByPath", {"notebook": notebook_id, "path": path}
+    )
+
     if result["code"] != 0:
         raise Exception(f"查询文档失败: {result['msg']}")
-    
+
     files = result["data"].get("files", [])
     docs = []
-    
+
     for file in files:
         doc_info = {
             "name": file["name"],
             "path": file["path"],
             "id": file["id"],
             "depth": depth,
-            "subFileCount": file.get("subFileCount", 0)
+            "subFileCount": file.get("subFileCount", 0),
         }
         docs.append(doc_info)
-        
+
         # 如果有子文档，递归获取
         if file.get("subFileCount", 0) > 0:
             sub_docs = get_doc_tree(notebook_id, file["path"], depth + 1)
             docs.extend(sub_docs)
-    
+
     return docs
 
 
@@ -124,7 +128,7 @@ def build_nested_markdown_tree(docs: list) -> str:
         return "- （空）"
 
     md_lines = []
-    
+
     for doc in docs:
         depth = doc.get("depth", 0)
         name = doc.get("name", "未命名")
@@ -159,10 +163,10 @@ def display_notebook_structure():
     """显示所有笔记本的结构，生成 Markdown 文件。"""
     try:
         all_notebooks = get_notebooks()
-        
+
         # 交互式选择笔记本
         selected_notebooks = select_notebooks_interactive(all_notebooks)
-        
+
         if not selected_notebooks:
             print("未选择任何笔记本，已退出")
             return
