@@ -9,6 +9,57 @@ API_BASE_URL = "http://127.0.0.1:6806"
 API_TOKEN = ""
 
 
+def select_notebooks_interactive(notebooks: list) -> list:
+    """交互式选择要导出的笔记本。"""
+    if not notebooks:
+        print("没有找到任何笔记本")
+        return []
+    
+    print("\n📚 可用的笔记本：\n")
+    for i, notebook in enumerate(notebooks, 1):
+        print(f"  {i}. {notebook['name']}")
+    
+    print(f"\n请选择要导出的笔记本 (默认全选，按 Enter 确认):")
+    print("输入格式: 1,2,3 或 1-3 或直接按 Enter 选择全部")
+    print("例如: 1,3 表示选择第1和第3个笔记本\n")
+    
+    user_input = input("请输入: ").strip()
+    
+    # 默认全选
+    if not user_input:
+        return notebooks
+    
+    selected_indices = set()
+    
+    try:
+        # 处理逗号分隔的输入
+        parts = user_input.split(",")
+        for part in parts:
+            part = part.strip()
+            # 处理范围输入 (如 1-3)
+            if "-" in part:
+                start, end = part.split("-")
+                start, end = int(start.strip()), int(end.strip())
+                selected_indices.update(range(start, end + 1))
+            else:
+                selected_indices.add(int(part))
+        
+        # 验证索引范围
+        selected_indices = {i for i in selected_indices if 1 <= i <= len(notebooks)}
+        
+        if not selected_indices:
+            print("❌ 输入无效，已选择全部笔记本")
+            return notebooks
+        
+        selected = [notebooks[i - 1] for i in sorted(selected_indices)]
+        print(f"\n✓ 已选择 {len(selected)} 个笔记本: {', '.join(nb['name'] for nb in selected)}\n")
+        return selected
+        
+    except (ValueError, IndexError):
+        print("❌ 输入格式错误，已选择全部笔记本\n")
+        return notebooks
+
+
 def set_api_token(token: str):
     """设置用于身份验证的 API token。"""
     global API_TOKEN
@@ -107,14 +158,22 @@ def generate_markdown_page(notebooks: list) -> str:
 def display_notebook_structure():
     """显示所有笔记本的结构，生成 Markdown 文件。"""
     try:
-        notebooks = get_notebooks()
+        all_notebooks = get_notebooks()
+        
+        # 交互式选择笔记本
+        selected_notebooks = select_notebooks_interactive(all_notebooks)
+        
+        if not selected_notebooks:
+            print("未选择任何笔记本，已退出")
+            return
 
-        for notebook in notebooks:
+        print("正在导出笔记本结构...\n")
+        for notebook in selected_notebooks:
             notebook_name = notebook["name"]
             docs = get_doc_tree(notebook["id"])
-            print(f"笔记本 '{notebook_name}': 获取到 {len(docs)} 个文档")
+            print(f"✓ 笔记本 '{notebook_name}': 获取到 {len(docs)} 个文档")
 
-        md_content = generate_markdown_page(notebooks)
+        md_content = generate_markdown_page(selected_notebooks)
 
         with open("笔记结构.md", "w", encoding="utf-8") as f:
             f.write(md_content)
@@ -123,7 +182,7 @@ def display_notebook_structure():
         print("请用 Markdown 编辑器打开该文件查看")
 
     except Exception as e:
-        print(f"错误: {e}")
+        print(f"❌ 错误: {e}")
         import traceback
 
         traceback.print_exc()
