@@ -7,6 +7,7 @@ load_dotenv()
 
 API_BASE_URL = ""
 API_TOKEN = ""
+OUTPUT_NAME = ""
 
 
 def select_notebooks_interactive(notebooks: list) -> list:
@@ -77,6 +78,12 @@ def set_api_baseurl(base_url: str, port: str):
     """设置思源笔记的请求地址"""
     global API_BASE_URL
     API_BASE_URL = f"{base_url}:{port}"
+
+
+def set_output_name(name: str):
+    """设置生成的文件名"""
+    global OUTPUT_NAME
+    OUTPUT_NAME = name
 
 
 def make_request(endpoint: str, data: Optional[dict] = None) -> dict:
@@ -187,10 +194,10 @@ def display_notebook_structure():
 
         md_content = generate_markdown_page(selected_notebooks)
 
-        with open("笔记结构.md", "w", encoding="utf-8") as f:
+        with open(f"dist/{OUTPUT_NAME}.md", "w", encoding="utf-8") as f:
             f.write(md_content)
 
-        print("\n✓ 已生成 笔记结构.md")
+        print(f"\n✓ 已生成 {OUTPUT_NAME}.md")
         print("请用 Markdown 编辑器打开该文件查看")
 
     except Exception as e:
@@ -210,6 +217,10 @@ if __name__ == "__main__":
     port = os.getenv("PORT")
     if not port:
         raise ValueError("PORT 未在 .env 文件中设置")
+    output_name = os.getenv("OUTPUT_NAME")
+    if not output_name:
+        raise ValueError("OUTPUT_NAME 未在 .env 文件中设置")
     set_api_token(api_token)
     set_api_baseurl(baseurl, port)
+    set_output_name(output_name)
     display_notebook_structure()
