@@ -5,15 +5,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL = "http://127.0.0.1:6806"
+API_BASE_URL = ""
 API_TOKEN = ""
 
 
 def select_notebooks_interactive(notebooks: list) -> list:
     """交互式选择要导出的笔记本。"""
     # 过滤掉已关闭的笔记本
-    available_notebooks = [nb for nb in notebooks if not nb.get('closed', False)]
-    
+    available_notebooks = [nb for nb in notebooks if not nb.get("closed", False)]
+
     if not available_notebooks:
         print("没有找到任何可用的笔记本（所有笔记本都已关闭）")
         return []
@@ -22,7 +22,7 @@ def select_notebooks_interactive(notebooks: list) -> list:
     for i, notebook in enumerate(available_notebooks, 1):
         print(f"  {i}. {notebook['name']}")
 
-    print(f"\n请选择要导出的笔记本 (默认全选，按 Enter 确认):")
+    print("\n请选择要导出的笔记本 (默认全选，按 Enter 确认):")
     print("输入格式: 1,2,3 或 1-3 或直接按 Enter 选择全部")
     print("例如: 1,3 表示选择第1和第3个笔记本\n")
 
@@ -48,7 +48,9 @@ def select_notebooks_interactive(notebooks: list) -> list:
                 selected_indices.add(int(part))
 
         # 验证索引范围
-        selected_indices = {i for i in selected_indices if 1 <= i <= len(available_notebooks)}
+        selected_indices = {
+            i for i in selected_indices if 1 <= i <= len(available_notebooks)
+        }
 
         if not selected_indices:
             print("❌ 输入无效，已选择全部笔记本")
@@ -69,6 +71,12 @@ def set_api_token(token: str):
     """设置用于身份验证的 API token。"""
     global API_TOKEN
     API_TOKEN = token
+
+
+def set_api_baseurl(base_url: str, port: str):
+    """设置思源笔记的请求地址"""
+    global API_BASE_URL
+    API_BASE_URL = f"{base_url}:{port}"
 
 
 def make_request(endpoint: str, data: Optional[dict] = None) -> dict:
@@ -196,5 +204,12 @@ if __name__ == "__main__":
     api_token = os.getenv("API_TOKEN")
     if not api_token:
         raise ValueError("API_TOKEN 未在 .env 文件中设置")
+    baseurl = os.getenv("BASE_URL")
+    if not baseurl:
+        raise ValueError("BASE_URL 未在 .env 文件中设置")
+    port = os.getenv("PORT")
+    if not port:
+        raise ValueError("PORT 未在 .env 文件中设置")
     set_api_token(api_token)
+    set_api_baseurl(baseurl, port)
     display_notebook_structure()
