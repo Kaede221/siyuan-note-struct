@@ -2,8 +2,17 @@ import requests
 from typing import Optional
 import os
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.prompt import Prompt
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.tree import Tree
+from rich import box
 
 load_dotenv()
+
+console = Console()
 
 API_BASE_URL = ""
 API_TOKEN = ""
@@ -16,21 +25,42 @@ def select_notebooks_interactive(notebooks: list) -> list:
     available_notebooks = [nb for nb in notebooks if not nb.get("closed", False)]
 
     if not available_notebooks:
-        print("没有找到任何可用的笔记本（所有笔记本都已关闭）")
+        console.print(
+            Panel("没有找到任何可用的笔记本（所有笔记本都已关闭）", style="yellow")
+        )
         return []
 
-    print("\n📚 可用的笔记本：\n")
+    table = Table(
+        title="可用的笔记本",
+        box=box.ROUNDED,
+        title_style="bold cyan",
+        header_style="bold magenta",
+    )
+    table.add_column("序号", justify="center", style="dim", width=6)
+    table.add_column("笔记本名称", style="green")
+
     for i, notebook in enumerate(available_notebooks, 1):
-        print(f"  {i}. {notebook['name']}")
+        table.add_row(str(i), notebook["name"])
 
-    print("\n请选择要导出的笔记本 (默认全选，按 Enter 确认):")
-    print("输入格式: 1,2,3 或 1-3 或直接按 Enter 选择全部")
-    print("例如: 1,3 表示选择第1和第3个笔记本\n")
+    console.print()
+    console.print(table)
+    console.print()
 
-    user_input = input("请输入: ").strip()
+    console.print(
+        Panel(
+            "[bold]输入格式:[/bold] 1,2,3 或 1-3 或直接按 Enter 选择全部\n"
+            "[dim]例如: 1,3 表示选择第1和第3个笔记本[/dim]",
+            title="选择要导出的笔记本",
+            title_align="left",
+            border_style="blue",
+        )
+    )
+
+    user_input = Prompt.ask("[bold cyan]请输入[/bold cyan]", default="").strip()
 
     # 默认全选
     if not user_input:
+        console.print("[green]已选择全部笔记本[/green]")
         return available_notebooks
 
     selected_indices = set()
@@ -54,17 +84,18 @@ def select_notebooks_interactive(notebooks: list) -> list:
         }
 
         if not selected_indices:
-            print("❌ 输入无效，已选择全部笔记本")
+            console.print("[yellow]输入无效，已选择全部笔记本[/yellow]")
             return available_notebooks
 
         selected = [available_notebooks[i - 1] for i in sorted(selected_indices)]
-        print(
-            f"\n✓ 已选择 {len(selected)} 个笔记本: {', '.join(nb['name'] for nb in selected)}\n"
+        names = ", ".join(f"[green]{nb['name']}[/green]" for nb in selected)
+        console.print(
+            f"\n[bold]已选择 [cyan]{len(selected)}[/cyan] 个笔记本:[/bold] {names}\n"
         )
         return selected
 
     except (ValueError, IndexError):
-        print("❌ 输入格式错误，已选择全部笔记本\n")
+        console.print("[yellow]输入格式错误，已选择全部笔记本[/yellow]\n")
         return available_notebooks
 
 
@@ -177,50 +208,101 @@ def generate_markdown_page(notebooks: list) -> str:
 def display_notebook_structure():
     """显示所有笔记本的结构，生成 Markdown 文件。"""
     try:
-        all_notebooks = get_notebooks()
+        with console.status("[bold cyan]正在获取笔记本列表...[/bold cyan]"):
+            all_notebooks = get_notebooks()
 
         # 交互式选择笔记本
         selected_notebooks = select_notebooks_interactive(all_notebooks)
 
         if not selected_notebooks:
-            print("未选择任何笔记本，已退出")
+            console.print(Panel("未选择任何笔记本，已退出", style="yellow"))
             return
 
-        print("正在导出笔记本结构...\n")
+        console.print()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("正在导出笔记本结构...", total=len(selected_notebooks))
+            notebook_docs = {}
+            for notebook in selected_notebooks:
+                notebook_name = notebook["name"]
+                progress.update(task, description=f"正在获取: [green]{notebook_name}[/green]")
+                docs = get_doc_tree(notebook["id"])
+                notebook_docs[notebook["id"]] = docs
+                progress.advance(task)
+
+        # 用 Tree 展示获取结果
+        console.print()
+        result_tree = Tree("[bold cyan]获取结果[/bold cyan]")
         for notebook in selected_notebooks:
-            notebook_name = notebook["name"]
-            docs = get_doc_tree(notebook["id"])
-            print(f"✓ 笔记本 '{notebook_name}': 获取到 {len(docs)} 个文档")
+            docs = notebook_docs[notebook["id"]]
+            result_tree.add(
+                f"[green]{notebook['name']}[/green] [dim]({len(docs)} 个文档)[/dim]"
+            )
+        console.print(result_tree)
+        console.print()
 
         md_content = generate_markdown_page(selected_notebooks)
 
+        os.makedirs("dist", exist_ok=True)
         with open(f"dist/{OUTPUT_NAME}.md", "w", encoding="utf-8") as f:
             f.write(md_content)
 
-        print(f"\n✓ 已生成 {OUTPUT_NAME}.md")
-        print("请用 Markdown 编辑器打开该文件查看")
+        console.print(
+            Panel(
+                f"[bold green]已生成[/bold green] [cyan]dist/{OUTPUT_NAME}.md[/cyan]\n"
+                f"[dim]请用 Markdown 编辑器打开该文件查看[/dim]",
+                title="导出完成",
+                title_align="left",
+                border_style="green",
+            )
+        )
 
     except Exception as e:
-        print(f"❌ 错误: {e}")
-        import traceback
-
-        traceback.print_exc()
+        console.print_exception()
+        console.print(Panel(f"[bold red]错误:[/bold red] {e}", border_style="red"))
 
 
 if __name__ == "__main__":
-    api_token = os.getenv("API_TOKEN")
-    if not api_token:
-        raise ValueError("API_TOKEN 未在 .env 文件中设置")
-    baseurl = os.getenv("BASE_URL")
-    if not baseurl:
-        raise ValueError("BASE_URL 未在 .env 文件中设置")
-    port = os.getenv("PORT")
-    if not port:
-        raise ValueError("PORT 未在 .env 文件中设置")
-    output_name = os.getenv("OUTPUT_NAME")
-    if not output_name:
-        raise ValueError("OUTPUT_NAME 未在 .env 文件中设置")
-    set_api_token(api_token)
-    set_api_baseurl(baseurl, port)
-    set_output_name(output_name)
+    console.print(
+        Panel(
+            "[bold]思源笔记结构导出工具[/bold]",
+            subtitle="SiYuan Note Struct",
+            style="cyan",
+            box=box.DOUBLE,
+        )
+    )
+
+    env_vars = {
+        "API_TOKEN": os.getenv("API_TOKEN"),
+        "BASE_URL": os.getenv("BASE_URL"),
+        "PORT": os.getenv("PORT"),
+        "OUTPUT_NAME": os.getenv("OUTPUT_NAME"),
+    }
+
+    missing = [k for k, v in env_vars.items() if not v]
+    if missing:
+        console.print(
+            Panel(
+                "[bold red]以下环境变量未在 .env 文件中设置:[/bold red]\n"
+                + "\n".join(f"  [yellow]{k}[/yellow]" for k in missing),
+                title="配置错误",
+                border_style="red",
+            )
+        )
+        raise SystemExit(1)
+
+    # missing check above guarantees these are str, assert for type checker
+    assert env_vars["API_TOKEN"] is not None
+    assert env_vars["BASE_URL"] is not None
+    assert env_vars["PORT"] is not None
+    assert env_vars["OUTPUT_NAME"] is not None
+
+    set_api_token(env_vars["API_TOKEN"])
+    set_api_baseurl(env_vars["BASE_URL"], env_vars["PORT"])
+    set_output_name(env_vars["OUTPUT_NAME"])
     display_notebook_structure()
